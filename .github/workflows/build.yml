@@ -1,0 +1,37 @@
+name: Build Windows Client
+
+# 触发条件：当推送到 main 或 master 分支时，或者手动触发
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Compile on Windows
+    runs-on: windows-latest
+
+    steps:
+    # 1. 拉取代码
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # 2. 安装 MinGW-w64 (GCC编译器)
+    - name: Set up MinGW
+      uses: egor-tensin/setup-mingw@v2
+      with:
+        platform: x64
+
+    # 3. 运行你的 build.bat
+    - name: Run Build Script
+      shell: cmd
+      run: |
+        build.bat
+
+    # 4. 上传生成的 exe 文件供下载
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: v3_client_windows
+        path: v3_client.exe
+        retention-days: 5
