@@ -12,10 +12,13 @@
 #define WIN32_LEAN_AND_MEAN
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 
-#include <windows.h>
-#include <winsock2.h>
+/* === 修改点 1: 调整头文件引用顺序并增加 wincrypt.h === */
+#include <winsock2.h>   /* 必须在 windows.h 之前包含，防止重定义 */
 #include <ws2tcpip.h>
 #include <mswsock.h>
+#include <windows.h>
+#include <wincrypt.h>   /* 必须包含此文件以支持 CryptGenRandom */
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -23,9 +26,12 @@
 #include <string.h>
 #include <time.h>
 
+/* === 修改点 2: 仅在 MSVC 编译器下使用 pragma comment === */
+#ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "mswsock.lib")
 #pragma comment(lib, "advapi32.lib")
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -281,3 +287,4 @@ const char* v3_version(void);
 #endif
 
 #endif /* V3_H */
+
