@@ -16,7 +16,6 @@ jobs:
       uses: actions/checkout@v4
 
     # 2. 安装 MSYS2 和 MinGW-w64 GCC
-    # 这是目前最稳定的安装 GCC 的方式，不会因为第三方源更新而报错
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
       with:
@@ -25,11 +24,17 @@ jobs:
         update: true
 
     # 3. 编译
-    # 注意：这里指定 shell: msys2 {0} 是为了使用上面安装好的环境
     - name: Compile Code
       shell: msys2 {0}
       run: |
-        gcc -Wall -Wextra -O2 -I include -static -o v3_client.exe src/v3_main.c src/v3_utils.c src/v3_crypto.c src/v3_session.c src/v3_socks5.c -lws2_32 -lmswsock -ladvapi32
+        gcc -Wall -Wextra -O2 -I include -static -o v3_client.exe \
+          src/v3_main.c \
+          src/v3_utils.c \
+          src/v3_crypto.c \
+          src/v3_session.c \
+          src/v3_socks5.c \
+          src/v3_transport.c \
+          -lws2_32 -lmswsock -ladvapi32 -lwinhttp
 
     # 4. 上传生成的 exe 文件
     - name: Upload Artifact
