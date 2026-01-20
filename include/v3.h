@@ -8,15 +8,20 @@
 #ifndef V3_H
 #define V3_H
 
+/* === FIX 1: 定义 Windows 版本以启用新 API (必须放在所有 include 之前) === */
+#define _WIN32_WINNT 0x0A00 // Windows 10
+
 #define _CRT_SECURE_NO_WARNINGS
 #define WIN32_LEAN_AND_MEAN
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 
-#include <windows.h>
+/* === FIX 2: 调整头文件顺序并重新加入 wincrypt.h === */
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <mswsock.h>
-#include <winhttp.h>    /* === 新增: WinHTTP for WebSocket/TLS === */
+#include <windows.h>
+#include <winhttp.h>
+#include <wincrypt.h>    /* 重新加入此头文件以修复加密 API 错误 */
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -24,11 +29,13 @@
 #include <string.h>
 #include <time.h>
 
+/* === FIX 3: 使用条件编译消除 GCC 的 pragma 警告 === */
+#ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "mswsock.lib")
 #pragma comment(lib, "advapi32.lib")
-#pragma comment(lib, "winhttp.lib") /* === 新增: Link WinHTTP Library === */
-
+#pragma comment(lib, "winhttp.lib")
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -116,13 +123,11 @@ int v3_aead_encrypt(
     const uint8_t *aad, size_t aad_len,
     const uint8_t nonce[V3_NONCE_SIZE], const uint8_t key[V3_KEY_SIZE]
 );
-
 int v3_aead_decrypt(
     uint8_t *plaintext, const uint8_t *ciphertext, size_t ciphertext_len,
     const uint8_t tag[V3_TAG_SIZE], const uint8_t *aad, size_t aad_len,
     const uint8_t nonce[V3_NONCE_SIZE], const uint8_t key[V3_KEY_SIZE]
 );
-
 uint32_t v3_derive_magic(const uint8_t key[V3_KEY_SIZE], uint64_t window);
 uint32_t v3_current_magic(const uint8_t key[V3_KEY_SIZE]);
 bool v3_verify_magic(const uint8_t key[V3_KEY_SIZE], uint32_t magic, int tolerance);
@@ -140,7 +145,6 @@ typedef struct {
     uint16_t    payload_hint;
     uint16_t    reserved;
 } v3_header_t;
-
 typedef struct {
     uint64_t    session_id;
     uint16_t    stream_id;
@@ -159,31 +163,20 @@ typedef struct {
  * 客户端一体化接口
  * ============================================================ */
 
-/* === 修改点 1: 增加 WSS 相关配置 === */
 typedef enum {
     V3_MODE_UDP = 0,
     V3_MODE_WSS = 1
 } v3_mode_t;
-
 typedef struct {
-    /* 服务器 */
     const char *server_host;
     uint16_t    server_port;
-    
-    /* 密钥 */
     const char *key_hex;
     uint8_t     key[V3_KEY_SIZE];
     bool        key_is_hex;
-    
-    /* 本地 */
     uint16_t    local_port;
-
-    /* === 新增: 模式与WSS选项 === */
     v3_mode_t   mode;
     const char* wss_host_header;
     const char* wss_path;
-    
-    /* 选项 */
     bool        verbose;
     const char *log_file;
 } v3_client_config_t;
@@ -215,12 +208,7 @@ int v3_session_send(v3_session_t *s, uint16_t stream_id, const uint8_t *data, si
 int v3_session_recv(v3_session_t *s, uint16_t *stream_id, uint8_t *buf, size_t buf_len, int timeout_ms);
 
 typedef struct {
-    uint64_t    packets_sent;
-    uint64_t    packets_recv;
-    uint64_t    bytes_sent;
-    uint64_t    bytes_recv;
-    uint64_t    errors;
-    uint64_t    rtt_us;
+    uint64_t    packets_sent, packets_recv, bytes_sent, bytes_recv, errors, rtt_us;
 } v3_session_stats_t;
 void v3_session_get_stats(v3_session_t *s, v3_session_stats_t *stats);
 
@@ -229,11 +217,9 @@ void v3_session_get_stats(v3_session_t *s, v3_session_stats_t *stats);
  * ============================================================ */
 
 typedef struct v3_socks5_s v3_socks5_t;
-
 typedef void (*v3_socks5_log_fn)(const char *msg, void *userdata);
-
 typedef struct {
-    uint16_t    listen_port;
+    uint16_t listen_port;
     const char *listen_addr;
     v3_session_t *session;
     v3_socks5_log_fn log_fn;
