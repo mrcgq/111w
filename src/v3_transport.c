@@ -8,14 +8,12 @@ struct v3_transport_s {
     const v3_client_config_t *config;
 
     union {
-        // UDP-specific data
         struct {
             SOCKET sock;
             struct sockaddr_storage server_addr;
             int server_addr_len;
         } udp;
 
-        // WSS-specific data
         struct {
             HINTERNET hSession;
             HINTERNET hConnect;
@@ -36,9 +34,8 @@ static int wss_connect(v3_transport_t *t) {
         return V3_ERR_NETWORK;
     }
 
-    // Convert multi-byte server host to wide char for WinHttpConnect
-    wchar_t w_host_server[256];
-    mbstowcs(w_host_server, cfg->server_host, 256);
+    wchar_t w_host_server[256] = {0};
+    MultiByteToWideChar(CP_UTF8, 0, cfg->server_host, -1, w_host_server, 256);
 
     t->handle.wss.hConnect = WinHttpConnect(t->handle.wss.hSession, w_host_server, cfg->server_port, 0);
     if (!t->handle.wss.hConnect) {
@@ -46,8 +43,8 @@ static int wss_connect(v3_transport_t *t) {
         return V3_ERR_NETWORK;
     }
     
-    wchar_t w_path[256];
-    mbstowcs(w_path, cfg->wss_path, 256);
+    wchar_t w_path[256] = {0};
+    MultiByteToWideChar(CP_UTF8, 0, cfg->wss_path, -1, w_path, 256);
 
     t->handle.wss.hRequest = WinHttpOpenRequest(t->handle.wss.hConnect, L"GET", w_path, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
     if (!t->handle.wss.hRequest) {
@@ -55,12 +52,12 @@ static int wss_connect(v3_transport_t *t) {
         return V3_ERR_NETWORK;
     }
     
-    if (!WinHttpSetOption(t->handle.wss.hRequest, WINHTTP_OPTION_UPGRADE_TO_WEBSOCKET, NULL, 0)) {
+    /* === FIX 1: 修正拼写错误 === */
+    if (!WinHttpSetOption(t->handle.wss.hRequest, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, NULL, 0)) {
         V3_ERROR("WinHttpSetOption (WebSocket Upgrade) failed: %lu", GetLastError());
         return V3_ERR_NETWORK;
     }
     
-    // Set Host header if provided
     if (cfg->wss_host_header) {
        wchar_t w_host_header[512];
        swprintf(w_host_header, 512, L"Host: %hs", cfg->wss_host_header);
@@ -104,9 +101,9 @@ static int wss_send(v3_transport_t *t, const uint8_t *data, size_t len) {
 
 static int wss_recv(v3_transport_t *t, uint8_t *buf, size_t buf_len, int timeout_ms) {
     DWORD bytesRead = 0;
-    DWORD bufferType;
-    
-    // WinHttp doesn't have a direct timeout on recv. For a simple client, this is a limitation.
+    /* === FIX 2: 修正变量类型 === */
+    WINHTTP_WEB_SOCKET_BUFFER_TYPE bufferType;
+
     (void)timeout_ms; 
 
     DWORD error = WinHttpWebSocketReceive(t->handle.wss.hWebSocket, buf, (DWORD)buf_len, &bytesRead, &bufferType);
@@ -126,7 +123,7 @@ static void wss_close(v3_transport_t *t) {
     memset(&t->handle.wss, 0, sizeof(t->handle.wss));
 }
 
-// --- UDP Transport Implementation ---
+// --- UDP Transport Implementation (no changes) ---
 
 static int udp_connect(v3_transport_t *t) {
     const v3_client_config_t *cfg = t->config;
@@ -186,7 +183,7 @@ static void udp_close(v3_transport_t *t) {
     t->handle.udp.sock = INVALID_SOCKET;
 }
 
-// --- Public Transport API ---
+// --- Public Transport API (no changes) ---
 
 v3_transport_t* v3_transport_create(const v3_client_config_t *cfg) {
     v3_transport_t *t = (v3_transport_t*)calloc(1, sizeof(v3_transport_t));
