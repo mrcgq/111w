@@ -17,7 +17,7 @@ static void signal_handler(int sig) {
 
 static void print_usage(const char *prog) {
     printf("\n");
-    printf("v3 Client v%s (Windows)\n", V3_VERSION_STRING);
+    printf("v3 Client v%s (Windows, UDP/WSS)\n", V3_VERSION_STRING);
     printf("\n");
     printf("Usage: %s [OPTIONS]\n", prog);
     printf("\n");
@@ -26,6 +26,9 @@ static void print_usage(const char *prog) {
     printf("  -p, --port PORT      Server port (default: %d)\n", V3_DEFAULT_PORT);
     printf("  -l, --local PORT     Local SOCKS5 port (default: %d)\n", V3_DEFAULT_LOCAL_PORT);
     printf("  -t, --token KEY      Master key (64 hex chars)\n");
+    printf("  -m, --mode MODE      Transport mode: udp or wss (default: udp)\n");
+    printf("  -H, --host HOST      (WSS only) Host header for CDN\n");
+    printf("  -P, --path PATH      (WSS only) WebSocket path (default: /)\n");
     printf("  -v, --verbose        Verbose output\n");
     printf("  -h, --help           Show this help\n");
     printf("\n");
@@ -35,7 +38,7 @@ static void print_banner(void) {
     printf("\n");
     printf("========================================\n");
     printf("   v3 Client v%s\n", V3_VERSION_STRING);
-    printf("   Windows Edition (Single Build)\n");
+    printf("   Windows Edition (UDP/WSS)\n");
     printf("========================================\n");
     printf("\n");
 }
@@ -46,17 +49,14 @@ int v3_client_run(const v3_client_config_t *cfg) {
         return V3_ERR_INVALID_PARAM;
     }
     
-    /* 初始化 */
     if (v3_init() != V3_OK) {
         V3_ERROR("v3_init failed");
         return V3_ERR_NETWORK;
     }
     
     v3_log_init(cfg->verbose ? V3_LOG_DEBUG : V3_LOG_INFO, cfg->log_file);
-    
     print_banner();
     
-    /* 处理密钥 */
     uint8_t key[V3_KEY_SIZE];
     if (cfg->key_is_hex && cfg->key_hex) {
         if (strlen(cfg->key_hex) != 64) {
@@ -74,23 +74,18 @@ int v3_client_run(const v3_client_config_t *cfg) {
         v3_random_bytes(key, V3_KEY_SIZE);
     }
     
-    V3_INFO("Server: %s:%d", cfg->server_host, 
-            cfg->server_port ? cfg->server_port : V3_DEFAULT_PORT);
-    V3_INFO("Local:  127.0.0.1:%d", 
-            cfg->local_port ? cfg->local_port : V3_DEFAULT_LOCAL_PORT);
+    V3_INFO("Server: %s:%d", cfg->server_host, cfg->server_port);
+    V3_INFO("Local:  127.0.0.1:%d", cfg->local_port);
+    V3_INFO("Mode:   %s", cfg->mode == V3_MODE_WSS ? "WSS" : "UDP");
+    if(cfg->mode == V3_MODE_WSS) {
+        V3_INFO("WSS Path: %s", cfg->wss_path);
+        if (cfg->wss_host_header) V3_INFO("WSS Host: %s", cfg->wss_host_header);
+    }
     
-    /* 创建会话 */
-    v3_session_t *session = v3_session_create(key);
+    v3_session_t *session = v3_session_create(key, cfg);
     if (!session) {
         V3_ERROR("Failed to create session");
         return V3_ERR_NO_MEMORY;
-    }
-    
-    if (v3_session_set_server(session, cfg->server_host, 
-            cfg->server_port ? cfg->server_port : V3_DEFAULT_PORT) != V3_OK) {
-        V3_ERROR("Failed to set server");
-        v3_session_destroy(session);
-        return V3_ERR_NETWORK;
     }
     
     if (v3_session_connect(session) != V3_OK) {
@@ -99,9 +94,8 @@ int v3_client_run(const v3_client_config_t *cfg) {
         return V3_ERR_NETWORK;
     }
     
-    /* 创建 SOCKS5 */
     v3_socks5_config_t socks_cfg = {
-        .listen_port = cfg->local_port ? cfg->local_port : V3_DEFAULT_LOCAL_PORT,
+        .listen_port = cfg->local_port,
         .listen_addr = "127.0.0.1",
         .session = session
     };
@@ -116,13 +110,10 @@ int v3_client_run(const v3_client_config_t *cfg) {
     
     V3_INFO("Ready! Use SOCKS5 proxy at 127.0.0.1:%d", socks_cfg.listen_port);
     
-    /* 运行 */
     v3_socks5_run(g_socks5);
     
-    /* 清理 */
     v3_socks5_destroy(g_socks5);
     g_socks5 = NULL;
-    
     v3_session_close(session);
     v3_session_destroy(session);
     
@@ -143,28 +134,32 @@ int main(int argc, char **argv) {
     v3_client_config_t cfg = {0};
     cfg.server_port = V3_DEFAULT_PORT;
     cfg.local_port = V3_DEFAULT_LOCAL_PORT;
+    cfg.mode = V3_MODE_UDP;
+    cfg.wss_path = "/";
     
-    /* 解析参数 */
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
             return 0;
-        }
-        else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
+        } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
             cfg.verbose = true;
-        }
-        else if ((strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--server") == 0) && i+1 < argc) {
+        } else if ((strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--server") == 0) && i + 1 < argc) {
             cfg.server_host = argv[++i];
-        }
-        else if ((strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--port") == 0) && i+1 < argc) {
+        } else if ((strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--port") == 0) && i + 1 < argc) {
             cfg.server_port = (uint16_t)atoi(argv[++i]);
-        }
-        else if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--local") == 0) && i+1 < argc) {
+        } else if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--local") == 0) && i + 1 < argc) {
             cfg.local_port = (uint16_t)atoi(argv[++i]);
-        }
-        else if ((strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--token") == 0) && i+1 < argc) {
+        } else if ((strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--token") == 0) && i + 1 < argc) {
             cfg.key_hex = argv[++i];
             cfg.key_is_hex = true;
+        } else if ((strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "--mode") == 0) && i + 1 < argc) {
+            if (_stricmp(argv[++i], "wss") == 0) {
+                cfg.mode = V3_MODE_WSS;
+            }
+        } else if ((strcmp(argv[i], "-H") == 0 || strcmp(argv[i], "--host") == 0) && i + 1 < argc) {
+            cfg.wss_host_header = argv[++i];
+        } else if ((strcmp(argv[i], "-P") == 0 || strcmp(argv[i], "--path") == 0) && i + 1 < argc) {
+            cfg.wss_path = argv[++i];
         }
     }
     
