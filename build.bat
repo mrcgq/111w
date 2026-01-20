@@ -8,7 +8,7 @@ echo ============================================
 echo.
 
 set CC=gcc
-set CFLAGS=-Wall -Wextra -O2 -I include
+set CFLAGS=-Wall -Wextra -O2 -I include -static
 set LDFLAGS=-lws2_32 -lmswsock -ladvapi32
 set OUT=v3_client.exe
 
