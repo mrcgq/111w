@@ -3,6 +3,12 @@
  */
 #include "v3.h"
 
+// === FIX: Manually define missing error code from some MinGW winhttp.h versions ===
+#ifndef ERROR_WINHTTP_WEB_SOCKET_CLOSE_RECEIVED
+#define ERROR_WINHTTP_WEB_SOCKET_CLOSE_RECEIVED 12175
+#endif
+
+
 struct v3_transport_s {
     v3_mode_t mode;
     const v3_client_config_t *config;
@@ -52,7 +58,6 @@ static int wss_connect(v3_transport_t *t) {
         return V3_ERR_NETWORK;
     }
     
-    /* === FIX 1: 修正拼写错误 === */
     if (!WinHttpSetOption(t->handle.wss.hRequest, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, NULL, 0)) {
         V3_ERROR("WinHttpSetOption (WebSocket Upgrade) failed: %lu", GetLastError());
         return V3_ERR_NETWORK;
@@ -101,7 +106,6 @@ static int wss_send(v3_transport_t *t, const uint8_t *data, size_t len) {
 
 static int wss_recv(v3_transport_t *t, uint8_t *buf, size_t buf_len, int timeout_ms) {
     DWORD bytesRead = 0;
-    /* === FIX 2: 修正变量类型 === */
     WINHTTP_WEB_SOCKET_BUFFER_TYPE bufferType;
 
     (void)timeout_ms; 
