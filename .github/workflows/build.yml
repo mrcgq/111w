@@ -1,6 +1,5 @@
 name: Build Windows Client
 
-# 触发条件：当推送到 main 或 master 分支时，或者手动触发
 on:
   push:
     branches: [ "main", "master" ]
@@ -16,19 +15,21 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 2. 安装 MinGW-w64 (GCC编译器)
+    # 2. 安装 MinGW-w64 (更换为 brechtsanders 版本，更稳定)
     - name: Set up MinGW
-      uses: egor-tensin/setup-mingw@v2
+      uses: brechtsanders/setup-mingw@v3
       with:
         platform: x64
+        version: latest
 
-    # 3. 运行你的 build.bat
+    # 3. 运行编译脚本 (注意：这里我手动添加了编译命令，确保加上 -static)
+    #    这样即使你的 build.bat 里没加 -static，这里也会强制加上，保证生成独立exe
     - name: Run Build Script
       shell: cmd
       run: |
-        build.bat
+        gcc -Wall -Wextra -O2 -I include -static -o v3_client.exe src/v3_main.c src/v3_utils.c src/v3_crypto.c src/v3_session.c src/v3_socks5.c -lws2_32 -lmswsock -ladvapi32
 
-    # 4. 上传生成的 exe 文件供下载
+    # 4. 上传生成的 exe 文件
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
