@@ -1,27 +1,29 @@
+
 /*
- * v3.h - v3 Protocol Core (Windows Only, WSS Enabled)
+ * v3.h - v3 Protocol Core (Windows Only, WSS/DoH Enabled)
  * 
  * 单线设计，专为 Windows 优化
  * 支持: MSVC / MinGW-w64
+ * 功能: UDP / WSS / DoH
  */
 
 #ifndef V3_H
 #define V3_H
 
-/* === FIX 1: 定义 Windows 版本以启用新 API (必须放在所有 include 之前) === */
+/* === 定义 Windows 版本以启用新 API (必须放在所有 include 之前) === */
 #define _WIN32_WINNT 0x0A00 // Windows 10
 
 #define _CRT_SECURE_NO_WARNINGS
 #define WIN32_LEAN_AND_MEAN
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 
-/* === FIX 2: 调整头文件顺序并重新加入 wincrypt.h === */
+/* === 头文件 === */
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <mswsock.h>
 #include <windows.h>
 #include <winhttp.h>
-#include <wincrypt.h>    /* 重新加入此头文件以修复加密 API 错误 */
+#include <wincrypt.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -29,7 +31,7 @@
 #include <string.h>
 #include <time.h>
 
-/* === FIX 3: 使用条件编译消除 GCC 的 pragma 警告 === */
+/* === 链接库 (仅 MSVC) === */
 #ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "mswsock.lib")
@@ -70,16 +72,16 @@ extern "C" {
  * ============================================================ */
 
 typedef enum {
-    V3_OK = 0,
+    V3_OK               = 0,
     V3_ERR_INVALID_PARAM = -1,
-    V3_ERR_NO_MEMORY = -2,
-    V3_ERR_NETWORK = -3,
-    V3_ERR_CRYPTO = -4,
-    V3_ERR_PROTOCOL = -5,
-    V3_ERR_TIMEOUT = -6,
-    V3_ERR_CLOSED = -7,
-    V3_ERR_WOULD_BLOCK = -8,
-    V3_ERR_AUTH_FAILED = -9,
+    V3_ERR_NO_MEMORY    = -2,
+    V3_ERR_NETWORK      = -3,
+    V3_ERR_CRYPTO       = -4,
+    V3_ERR_PROTOCOL     = -5,
+    V3_ERR_TIMEOUT      = -6,
+    V3_ERR_CLOSED       = -7,
+    V3_ERR_WOULD_BLOCK  = -8,
+    V3_ERR_AUTH_FAILED  = -9,
 } v3_error_t;
 
 /* ============================================================
@@ -88,8 +90,8 @@ typedef enum {
 
 typedef enum {
     V3_LOG_DEBUG = 0,
-    V3_LOG_INFO = 1,
-    V3_LOG_WARN = 2,
+    V3_LOG_INFO  = 1,
+    V3_LOG_WARN  = 2,
     V3_LOG_ERROR = 3,
 } v3_log_level_t;
 
@@ -118,16 +120,27 @@ int v3_secure_compare(const void *a, const void *b, size_t len);
  * ============================================================ */
 
 int v3_aead_encrypt(
-    uint8_t *ciphertext, uint8_t tag[V3_TAG_SIZE],
-    const uint8_t *plaintext, size_t plaintext_len,
-    const uint8_t *aad, size_t aad_len,
-    const uint8_t nonce[V3_NONCE_SIZE], const uint8_t key[V3_KEY_SIZE]
+    uint8_t *ciphertext,
+    uint8_t tag[V3_TAG_SIZE],
+    const uint8_t *plaintext,
+    size_t plaintext_len,
+    const uint8_t *aad,
+    size_t aad_len,
+    const uint8_t nonce[V3_NONCE_SIZE],
+    const uint8_t key[V3_KEY_SIZE]
 );
+
 int v3_aead_decrypt(
-    uint8_t *plaintext, const uint8_t *ciphertext, size_t ciphertext_len,
-    const uint8_t tag[V3_TAG_SIZE], const uint8_t *aad, size_t aad_len,
-    const uint8_t nonce[V3_NONCE_SIZE], const uint8_t key[V3_KEY_SIZE]
+    uint8_t *plaintext,
+    const uint8_t *ciphertext,
+    size_t ciphertext_len,
+    const uint8_t tag[V3_TAG_SIZE],
+    const uint8_t *aad,
+    size_t aad_len,
+    const uint8_t nonce[V3_NONCE_SIZE],
+    const uint8_t key[V3_KEY_SIZE]
 );
+
 uint32_t v3_derive_magic(const uint8_t key[V3_KEY_SIZE], uint64_t window);
 uint32_t v3_current_magic(const uint8_t key[V3_KEY_SIZE]);
 bool v3_verify_magic(const uint8_t key[V3_KEY_SIZE], uint32_t magic, int tolerance);
@@ -137,6 +150,7 @@ bool v3_verify_magic(const uint8_t key[V3_KEY_SIZE], uint32_t magic, int toleran
  * ============================================================ */
 
 #pragma pack(push, 1)
+
 typedef struct {
     uint32_t    magic;
     uint8_t     nonce[12];
@@ -145,12 +159,14 @@ typedef struct {
     uint16_t    payload_hint;
     uint16_t    reserved;
 } v3_header_t;
+
 typedef struct {
     uint64_t    session_id;
     uint16_t    stream_id;
     uint16_t    flags;
     uint32_t    sequence;
 } v3_metadata_t;
+
 #pragma pack(pop)
 
 #define V3_FLAG_NONE        0x0000
@@ -160,23 +176,44 @@ typedef struct {
 #define V3_FLAG_DATA        0x0008
 
 /* ============================================================
- * 客户端一体化接口
+ * 传输模式
  * ============================================================ */
 
 typedef enum {
     V3_MODE_UDP = 0,
     V3_MODE_WSS = 1
 } v3_mode_t;
+
+/* ============================================================
+ * 客户端配置
+ * ============================================================ */
+
 typedef struct {
+    /* 服务器配置 */
     const char *server_host;
     uint16_t    server_port;
+    
+    /* 密钥配置 */
     const char *key_hex;
     uint8_t     key[V3_KEY_SIZE];
     bool        key_is_hex;
+    
+    /* 本地配置 */
     uint16_t    local_port;
+    
+    /* 传输模式 */
     v3_mode_t   mode;
-    const char* wss_host_header;
-    const char* wss_path;
+    
+    /* WSS 配置 */
+    const char *wss_host_header;
+    const char *wss_path;
+    
+    /* DoH 配置 */
+    bool        doh_enabled;
+    const char *doh_server_1;
+    const char *doh_server_2;
+    
+    /* 调试配置 */
     bool        verbose;
     const char *log_file;
 } v3_client_config_t;
@@ -184,9 +221,10 @@ typedef struct {
 /* ============================================================
  * Transport Layer (UDP / WSS)
  * ============================================================ */
+
 typedef struct v3_transport_s v3_transport_t;
 
-v3_transport_t* v3_transport_create(const v3_client_config_t* cfg);
+v3_transport_t* v3_transport_create(const v3_client_config_t *cfg);
 void v3_transport_destroy(v3_transport_t *t);
 int v3_transport_connect(v3_transport_t *t);
 void v3_transport_close(v3_transport_t *t);
@@ -208,8 +246,14 @@ int v3_session_send(v3_session_t *s, uint16_t stream_id, const uint8_t *data, si
 int v3_session_recv(v3_session_t *s, uint16_t *stream_id, uint8_t *buf, size_t buf_len, int timeout_ms);
 
 typedef struct {
-    uint64_t    packets_sent, packets_recv, bytes_sent, bytes_recv, errors, rtt_us;
+    uint64_t    packets_sent;
+    uint64_t    packets_recv;
+    uint64_t    bytes_sent;
+    uint64_t    bytes_recv;
+    uint64_t    errors;
+    uint64_t    rtt_us;
 } v3_session_stats_t;
+
 void v3_session_get_stats(v3_session_t *s, v3_session_stats_t *stats);
 
 /* ============================================================
@@ -218,12 +262,13 @@ void v3_session_get_stats(v3_session_t *s, v3_session_stats_t *stats);
 
 typedef struct v3_socks5_s v3_socks5_t;
 typedef void (*v3_socks5_log_fn)(const char *msg, void *userdata);
+
 typedef struct {
-    uint16_t listen_port;
-    const char *listen_addr;
-    v3_session_t *session;
-    v3_socks5_log_fn log_fn;
-    void *userdata;
+    uint16_t            listen_port;
+    const char         *listen_addr;
+    v3_session_t       *session;
+    v3_socks5_log_fn    log_fn;
+    void               *userdata;
 } v3_socks5_config_t;
 
 v3_socks5_t* v3_socks5_create(const v3_socks5_config_t *cfg);
